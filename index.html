@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Shared Budget Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-800">
+
+<!-- ======================================================= -->
+<!-- CONFIG: paste your Apps Script Web App URL below         -->
+<!-- ======================================================= -->
+<script>
+  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbznlqzFyfD35n_fSXQRB3I21RowgHensvJWeSrLZp9F8qJN4Aq-bVoUIIy1qY4CstZ4/exec";
+</script>
+
+<div class="max-w-3xl mx-auto p-4">
+
+  <header class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-bold">👥 Shared Budget Dashboard</h1>
+    <button id="refreshBtn" class="text-sm px-3 py-1 rounded bg-white border shadow-sm hover:bg-gray-50">Refresh</button>
+  </header>
+
+  <div id="configWarning" class="hidden mb-4 p-3 rounded bg-yellow-100 border border-yellow-300 text-sm">
+    ⚠️ Set <code>SCRIPT_URL</code> at the top of this file to your deployed Apps Script Web App URL.
+  </div>
+
+  <div id="alertBanner" class="hidden mb-4 p-3 rounded bg-red-100 border border-red-300 text-sm font-medium"></div>
+
+  <!-- Tabs -->
+  <nav class="flex gap-2 mb-4 border-b">
+    <button data-tab="dashboard" class="tab-btn px-3 py-2 text-sm font-medium border-b-2 border-indigo-600 text-indigo-600">Dashboard</button>
+    <button data-tab="history" class="tab-btn px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">History</button>
+    <button data-tab="add" class="tab-btn px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Add</button>
+    <button data-tab="summary" class="tab-btn px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Summary</button>
+  </nav>
+
+  <div id="loading" class="text-sm text-gray-500">Loading…</div>
+
+  <!-- Dashboard -->
+  <section id="tab-dashboard" class="tab-section hidden grid grid-cols-1 sm:grid-cols-2 gap-3"></section>
+
+  <!-- History -->
+  <section id="tab-history" class="tab-section hidden">
+    <div id="historyList" class="bg-white rounded shadow-sm divide-y"></div>
+  </section>
+
+  <!-- Add -->
+  <section id="tab-add" class="tab-section hidden bg-white rounded shadow-sm p-4">
+    <form id="addForm" class="space-y-3">
+
+      <div class="flex gap-2">
+        <button type="button" data-state="completed" class="state-btn flex-1 py-2 rounded border bg-indigo-600 text-white text-sm">Payment</button>
+        <button type="button" data-state="pending" class="state-btn flex-1 py-2 rounded border text-sm">Planned Payment</button>
+      </div>
+      <input type="hidden" id="stateField" value="completed" />
+
+      <div>
+        <label class="block text-xs font-medium mb-1">Budget</label>
+        <select id="budgetSelect" class="w-full border rounded px-2 py-2 text-sm" required></select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium mb-1">Amount</label>
+          <input id="amountField" type="number" step="0.01" min="0" required class="w-full border rounded px-2 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium mb-1">Date</label>
+          <input id="dateField" type="date" class="w-full border rounded px-2 py-2 text-sm" />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium mb-1">Description</label>
+        <input id="descField" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. Target grocery run" />
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium mb-1">Your name</label>
+        <input id="userField" list="userSuggestions" type="text" class="w-full border rounded px-2 py-2 text-sm" required />
+        <datalist id="userSuggestions"></datalist>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium mb-1">Tags (comma-separated)</label>
+        <input id="tagsField" type="text" class="w-full border rounded px-2 py-2 text-sm" placeholder="groceries, weekly-shop" />
+        <div id="tagSuggestions" class="flex flex-wrap gap-1 mt-2"></div>
+      </div>
+
+      <button type="submit" class="w-full py-2 rounded bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">Save</button>
+      <p id="addStatus" class="text-xs text-center"></p>
+    </form>
+
+    <hr class="my-4" />
+
+    <details>
+      <summary class="text-xs text-gray-500 cursor-pointer">+ Add a new budget category</summary>
+      <form id="addBudgetForm" class="space-y-3 mt-3">
+        <div>
+          <label class="block text-xs font-medium mb-1">Name</label>
+          <input id="newBudgetName" type="text" required class="w-full border rounded px-2 py-2 text-sm" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium mb-1">Type</label>
+            <select id="newBudgetType" class="w-full border rounded px-2 py-2 text-sm">
+              <option value="monthly">Monthly</option>
+              <option value="one-time">One-time</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium mb-1">Amount</label>
+            <input id="newBudgetAmount" type="number" step="0.01" min="0" required class="w-full border rounded px-2 py-2 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium mb-1">Alert threshold (%)</label>
+          <input id="newBudgetThreshold" type="number" min="1" max="100" value="80" class="w-full border rounded px-2 py-2 text-sm" />
+        </div>
+        <button type="submit" class="w-full py-2 rounded bg-gray-800 text-white text-sm font-medium hover:bg-gray-900">Create Budget</button>
+        <p id="addBudgetStatus" class="text-xs text-center"></p>
+      </form>
+    </details>
+  </section>
+
+  <!-- Summary -->
+  <section id="tab-summary" class="tab-section hidden space-y-4">
+    <div>
+      <label class="text-xs font-medium mr-2">Month</label>
+      <input id="summaryMonth" type="month" class="border rounded px-2 py-1 text-sm" />
+    </div>
+    <div id="summaryByBudget" class="space-y-3"></div>
+    <div class="bg-white rounded shadow-sm p-4">
+      <h3 class="font-semibold text-sm mb-2">Global Tag Breakdown</h3>
+      <div id="summaryGlobalTags" class="text-sm space-y-1"></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+let STATE = { budgets: [], payments: [] };
+
+// ---------- Tabs ----------
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => showTab(btn.dataset.tab));
+});
+function showTab(name) {
+  document.querySelectorAll('.tab-section').forEach(s => s.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.remove('border-indigo-600', 'text-indigo-600');
+    b.classList.add('border-transparent', 'text-gray-500');
+  });
+  document.getElementById('tab-' + name).classList.remove('hidden');
+  const activeBtn = document.querySelector(`.tab-btn[data-tab="${name}"]`);
+  activeBtn.classList.add('border-indigo-600', 'text-indigo-600');
+  activeBtn.classList.remove('border-transparent', 'text-gray-500');
+  if (name === 'summary') renderSummary();
+}
+
+// ---------- Data load ----------
+async function loadData() {
+  if (!SCRIPT_URL || SCRIPT_URL.indexOf('PASTE_YOUR') === 0) {
+    document.getElementById('configWarning').classList.remove('hidden');
+    document.getElementById('loading').classList.add('hidden');
+    return;
+  }
+  document.getElementById('loading').classList.remove('hidden');
+  try {
+    const res = await fetch(SCRIPT_URL);
+    const data = await res.json();
+    if (data.status !== 'success') throw new Error(data.message || 'Unknown error');
+    STATE.budgets = data.budgets;
+    STATE.payments = data.payments;
+    renderAll();
+  } catch (err) {
+    document.getElementById('loading').textContent = 'Error loading data: ' + err.message;
+    return;
+  }
+  document.getElementById('loading').classList.add('hidden');
+}
+
+function renderAll() {
+  renderDashboard();
+  renderHistory();
+  populateBudgetDropdown();
+  populateUserSuggestions();
+  renderAlertBanner();
+  document.getElementById('tab-dashboard').classList.remove('hidden');
+}
+
+// ---------- Dashboard ----------
+function renderAlertBanner() {
+  const exceeded = STATE.budgets.filter(b => b.thresholdExceeded);
+  const banner = document.getElementById('alertBanner');
+  if (exceeded.length) {
+    banner.textContent = '⚠️ ' + exceeded.map(b => `${b.name} has passed its ${(b.thresholdPct * 100).toFixed(0)}% threshold!`).join(' ');
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+function renderDashboard() {
+  const el = document.getElementById('tab-dashboard');
+  el.innerHTML = '';
+  STATE.budgets.forEach(b => {
+    const pct = Math.min(b.pctUsed * 100, 100);
+    const barColor = b.thresholdExceeded ? 'bg-red-500' : (b.pctUsed > 0.5 ? 'bg-yellow-500' : 'bg-green-500');
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded shadow-sm p-4';
+    card.innerHTML = `
+      <div class="flex justify-between items-baseline mb-1">
+        <span class="font-semibold">${escapeHtml(b.name)}</span>
+        <span class="text-xs text-gray-400 uppercase">${escapeHtml(b.type)}</span>
+      </div>
+      <div class="text-sm text-gray-600 mb-2">$${b.spent.toFixed(2)} / $${b.amount.toFixed(2)} used</div>
+      <div class="w-full bg-gray-200 rounded h-2 mb-1">
+        <div class="${barColor} h-2 rounded" style="width:${pct}%"></div>
+      </div>
+      <div class="text-xs text-gray-400">$${b.remaining.toFixed(2)} remaining</div>
+    `;
+    el.appendChild(card);
+  });
+}
+
+// ---------- History ----------
+function renderHistory() {
+  const el = document.getElementById('historyList');
+  el.innerHTML = '';
+  const sorted = [...STATE.payments].sort((a, b) => new Date(b.date) - new Date(a.date));
+  sorted.forEach(p => {
+    const budget = STATE.budgets.find(b => b.id === p.budgetId);
+    const row = document.createElement('div');
+    row.className = 'p-3 flex items-center justify-between text-sm';
+    const stateBadge = p.state === 'completed'
+      ? '<span class="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs">Completed</span>'
+      : '<span class="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs">Pending</span>';
+    row.innerHTML = `
+      <div>
+        <div>$${p.amount.toFixed(2)} · ${escapeHtml(budget ? budget.name : p.budgetId)} — ${escapeHtml(p.description)}</div>
+        <div class="text-xs text-gray-400">${escapeHtml(p.user)} · ${p.date ? p.date.slice(0,10) : ''} · ${p.tags.map(escapeHtml).join(', ')}</div>
+      </div>
+      <div class="flex items-center gap-2">
+        ${stateBadge}
+        ${p.state === 'pending' ? `<button class="completeBtn text-xs px-2 py-1 rounded bg-indigo-600 text-white" data-id="${p.id}">Complete</button>` : ''}
+      </div>
+    `;
+    el.appendChild(row);
+  });
+  document.querySelectorAll('.completeBtn').forEach(btn => {
+    btn.addEventListener('click', () => completePayment(btn.dataset.id));
+  });
+}
+
+async function completePayment(id) {
+  await postAction({ action: 'completePayment', id });
+  await loadData();
+}
+
+// ---------- Add form ----------
+function populateBudgetDropdown() {
+  const sel = document.getElementById('budgetSelect');
+  sel.innerHTML = '';
+  STATE.budgets.forEach(b => {
+    const opt = document.createElement('option');
+    opt.value = b.id;
+    opt.textContent = b.name;
+    sel.appendChild(opt);
+  });
+  updateTagSuggestions();
+}
+document.getElementById('budgetSelect').addEventListener('change', updateTagSuggestions);
+
+function updateTagSuggestions() {
+  const budgetId = document.getElementById('budgetSelect').value;
+  const tags = new Set();
+  STATE.payments.filter(p => p.budgetId === budgetId).forEach(p => p.tags.forEach(t => tags.add(t)));
+  const el = document.getElementById('tagSuggestions');
+  el.innerHTML = '';
+  [...tags].forEach(t => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'text-xs px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200';
+    chip.textContent = t;
+    chip.addEventListener('click', () => {
+      const field = document.getElementById('tagsField');
+      const current = field.value.split(',').map(s => s.trim()).filter(Boolean);
+      if (!current.includes(t)) current.push(t);
+      field.value = current.join(', ');
+    });
+    el.appendChild(chip);
+  });
+}
+
+function populateUserSuggestions() {
+  const users = new Set(STATE.payments.map(p => p.user).filter(Boolean));
+  const el = document.getElementById('userSuggestions');
+  el.innerHTML = '';
+  [...users].forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u;
+    el.appendChild(opt);
+  });
+}
+
+document.querySelectorAll('.state-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.state-btn').forEach(b => {
+      b.classList.remove('bg-indigo-600', 'text-white');
+      b.classList.add('border');
+    });
+    btn.classList.add('bg-indigo-600', 'text-white');
+    document.getElementById('stateField').value = btn.dataset.state;
+  });
+});
+
+document.getElementById('addForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById('addStatus');
+  statusEl.textContent = 'Saving…';
+  const payload = {
+    action: 'addPayment',
+    budgetId: document.getElementById('budgetSelect').value,
+    amount: parseFloat(document.getElementById('amountField').value),
+    description: document.getElementById('descField').value,
+    state: document.getElementById('stateField').value,
+    user: document.getElementById('userField').value,
+    tags: document.getElementById('tagsField').value.split(',').map(s => s.trim()).filter(Boolean),
+    date: document.getElementById('dateField').value || undefined
+  };
+  try {
+    await postAction(payload);
+    statusEl.textContent = 'Saved!';
+    e.target.reset();
+    await loadData();
+    setTimeout(() => statusEl.textContent = '', 2000);
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+});
+
+document.getElementById('addBudgetForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById('addBudgetStatus');
+  statusEl.textContent = 'Saving…';
+  const payload = {
+    action: 'addBudget',
+    name: document.getElementById('newBudgetName').value,
+    type: document.getElementById('newBudgetType').value,
+    amount: parseFloat(document.getElementById('newBudgetAmount').value),
+    thresholdPct: parseFloat(document.getElementById('newBudgetThreshold').value) / 100
+  };
+  try {
+    await postAction(payload);
+    statusEl.textContent = 'Budget created!';
+    e.target.reset();
+    await loadData();
+    setTimeout(() => statusEl.textContent = '', 2000);
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+});
+
+// text/plain avoids a CORS preflight against the Apps Script web app
+async function postAction(payload) {
+  const res = await fetch(SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (data.status !== 'success') throw new Error(data.message || 'Unknown error');
+  return data;
+}
+
+// ---------- Summary ----------
+document.getElementById('summaryMonth').addEventListener('change', renderSummary);
+
+function currentMonthValue() {
+  const d = new Date();
+  return d.toISOString().slice(0, 7);
+}
+document.getElementById('summaryMonth').value = currentMonthValue();
+
+function renderSummary() {
+  const month = document.getElementById('summaryMonth').value || currentMonthValue();
+  const completed = STATE.payments.filter(p => p.state === 'completed' && (p.date || '').slice(0, 7) === month);
+
+  const byBudgetEl = document.getElementById('summaryByBudget');
+  byBudgetEl.innerHTML = '';
+  STATE.budgets.forEach(b => {
+    const rows = completed.filter(p => p.budgetId === b.id);
+    if (!rows.length) return;
+    const byTag = {};
+    rows.forEach(p => {
+      const tags = p.tags.length ? p.tags : ['(untagged)'];
+      const share = p.amount / tags.length;
+      tags.forEach(t => { byTag[t] = (byTag[t] || 0) + share; });
+    });
+    const total = rows.reduce((s, p) => s + p.amount, 0);
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded shadow-sm p-4';
+    card.innerHTML = `
+      <h3 class="font-semibold text-sm mb-2">${escapeHtml(b.name)} — $${total.toFixed(2)}</h3>
+      <div class="text-sm space-y-1">
+        ${Object.entries(byTag).map(([t, amt]) => `<div class="flex justify-between"><span>${escapeHtml(t)}</span><span>$${amt.toFixed(2)}</span></div>`).join('')}
+      </div>
+    `;
+    byBudgetEl.appendChild(card);
+  });
+
+  const globalTags = {};
+  completed.forEach(p => {
+    const tags = p.tags.length ? p.tags : ['(untagged)'];
+    const share = p.amount / tags.length;
+    tags.forEach(t => { globalTags[t] = (globalTags[t] || 0) + share; });
+  });
+  const globalEl = document.getElementById('summaryGlobalTags');
+  globalEl.innerHTML = Object.entries(globalTags)
+    .sort((a, b) => b[1] - a[1])
+    .map(([t, amt]) => `<div class="flex justify-between"><span>${escapeHtml(t)}</span><span>$${amt.toFixed(2)}</span></div>`)
+    .join('') || '<p class="text-gray-400">No completed payments this month.</p>';
+}
+
+// ---------- Utils ----------
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+document.getElementById('refreshBtn').addEventListener('click', loadData);
+
+loadData();
+</script>
+
+</body>
+</html>
