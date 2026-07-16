@@ -161,6 +161,46 @@ function showTab(name) {
 }
 
 // ---------- Data load ----------
+// Apps Script's exec URL doesn't reliably send CORS headers, so plain
+// fetch() GETs get blocked by the browser. JSONP sidesteps that: the
+// response is loaded as a <script> tag (not subject to CORS) and calls
+// this global callback directly.
+let _jsonpCounter = 0;
+function jsonpRequest(url, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const cbName = '_jsonpCallback_' + (_jsonpCounter++);
+    const script = document.createElement('script');
+    let done = false;
+
+    const cleanup = () => {
+      delete window[cbName];
+      script.remove();
+      clearTimeout(timer);
+    };
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error('Request timed out'));
+    }, timeoutMs);
+
+    window[cbName] = (data) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(data);
+    };
+    script.onerror = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error('Failed to load data from the script URL'));
+    };
+    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName;
+    document.body.appendChild(script);
+  });
+}
+
 async function loadData() {
   if (!SCRIPT_URL || SCRIPT_URL.indexOf('PASTE_YOUR') === 0) {
     document.getElementById('configWarning').classList.remove('hidden');
@@ -169,8 +209,7 @@ async function loadData() {
   }
   document.getElementById('loading').classList.remove('hidden');
   try {
-    const res = await fetch(SCRIPT_URL);
-    const data = await res.json();
+    const data = await jsonpRequest(SCRIPT_URL);
     if (data.status !== 'success') throw new Error(data.message || 'Unknown error');
     STATE.budgets = data.budgets;
     STATE.payments = data.payments;
@@ -364,16 +403,58 @@ document.getElementById('addBudgetForm').addEventListener('submit', async (e) =>
   }
 });
 
-// text/plain avoids a CORS preflight against the Apps Script web app
-async function postAction(payload) {
-  const res = await fetch(SCRIPT_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(payload)
+// Writes go through a hidden iframe + form submit instead of fetch().
+// A real form POST to another origin is not subject to CORS (the
+// browser just can't read the *response* back via JS, which is fine
+// here since we can't read it either way with a plain exec URL).
+// We treat the POST as successful once the iframe finishes loading,
+// then re-fetch the data via JSONP to reflect the change.
+let _postFrameCounter = 0;
+function postAction(payload) {
+  return new Promise((resolve, reject) => {
+    const frameName = '_postFrame_' + (_postFrameCounter++);
+    const iframe = document.createElement('iframe');
+    iframe.name = frameName;
+    iframe.style.display = 'none';
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = SCRIPT_URL;
+    form.target = frameName;
+    form.style.display = 'none';
+
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'payload';
+    input.value = JSON.stringify(payload);
+    form.appendChild(input);
+
+    let done = false;
+    const cleanup = () => { form.remove(); iframe.remove(); clearTimeout(timer); };
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error('Request timed out'));
+    }, 15000);
+
+    // The iframe fires an initial onload for its blank starting document
+    // before the form ever submits into it - ignore that first event and
+    // only resolve on the second (the actual POST response landing).
+    let loadCount = 0;
+    iframe.onload = () => {
+      loadCount++;
+      if (loadCount < 2) return;
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve({ status: 'success' });
+    };
+
+    document.body.appendChild(iframe);
+    document.body.appendChild(form);
+    form.submit();
   });
-  const data = await res.json();
-  if (data.status !== 'success') throw new Error(data.message || 'Unknown error');
-  return data;
 }
 
 // ---------- Summary ----------
