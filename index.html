@@ -403,58 +403,21 @@ document.getElementById('addBudgetForm').addEventListener('submit', async (e) =>
   }
 });
 
-// Writes go through a hidden iframe + form submit instead of fetch().
-// A real form POST to another origin is not subject to CORS (the
-// browser just can't read the *response* back via JS, which is fine
-// here since we can't read it either way with a plain exec URL).
-// We treat the POST as successful once the iframe finishes loading,
-// then re-fetch the data via JSONP to reflect the change.
-let _postFrameCounter = 0;
-function postAction(payload) {
-  return new Promise((resolve, reject) => {
-    const frameName = '_postFrame_' + (_postFrameCounter++);
-    const iframe = document.createElement('iframe');
-    iframe.name = frameName;
-    iframe.style.display = 'none';
-
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = SCRIPT_URL;
-    form.target = frameName;
-    form.style.display = 'none';
-
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'payload';
-    input.value = JSON.stringify(payload);
-    form.appendChild(input);
-
-    let done = false;
-    const cleanup = () => { form.remove(); iframe.remove(); clearTimeout(timer); };
-    const timer = setTimeout(() => {
-      if (done) return;
-      done = true;
-      cleanup();
-      reject(new Error('Request timed out'));
-    }, 15000);
-
-    // The iframe fires an initial onload for its blank starting document
-    // before the form ever submits into it - ignore that first event and
-    // only resolve on the second (the actual POST response landing).
-    let loadCount = 0;
-    iframe.onload = () => {
-      loadCount++;
-      if (loadCount < 2) return;
-      if (done) return;
-      done = true;
-      cleanup();
-      resolve({ status: 'success' });
-    };
-
-    document.body.appendChild(iframe);
-    document.body.appendChild(form);
-    form.submit();
+// Writes use fetch() in 'no-cors' mode. The browser still sends the
+// request and Apps Script still processes it and writes to the sheet -
+// we just can't read the response body back (it comes back "opaque"),
+// which is fine since we re-fetch fresh data via JSONP right after.
+// (An earlier attempt used a hidden iframe + form submit, but Google
+// blocks its exec response from being framed by another origin, which
+// showed up as a 403 - so that approach doesn't work here.)
+async function postAction(payload) {
+  await fetch(SCRIPT_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload)
   });
+  return { status: 'success' };
 }
 
 // ---------- Summary ----------
